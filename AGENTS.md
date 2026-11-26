@@ -1,6 +1,6 @@
 # Instructions for agents using this fork
 
-This repository is `RockyYang1225/kurocat-customeowze`, an unofficial KuroCat fork. Read `README.md`, `docs/INSTALL.md` and `docs/DIY.md` before installation or customization.
+This repository is `zoeyli1997-hash/kurocat-customeowze`, an unofficial KuroCat fork. Read `README.md`, `docs/INSTALL.md` and `docs/DIY.md` before installation or customization.
 
 - Install/build THIS repository's default branch; upstream KuroCat binaries do not include its custom-artwork tools.
 - No fork installers are currently published. Do not invent a Homebrew/npm package or download upstream installers as a substitute.

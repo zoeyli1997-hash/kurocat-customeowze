@@ -1,6 +1,6 @@
 # 从这个 Fork 安装
 
-仓库：https://github.com/RockyYang1225/kurocat-customeowze
+仓库：https://github.com/zoeyli1997-hash/kurocat-customeowze
 
 请使用默认分支 `customeowze`。当前发布的是源码，不是安装包；原版 KuroCat 的安装包不会包含新增的素材工具。
 
@@ -15,7 +15,7 @@
 ## macOS 源码构建
 
 ```sh
-git clone https://github.com/RockyYang1225/kurocat-customeowze.git
+git clone https://github.com/zoeyli1997-hash/kurocat-customeowze.git
 cd kurocat-customeowze
 npm ci
 npm run tauri -- build --no-bundle
@@ -62,4 +62,4 @@ macOS 真实键鼠响应还需要为实际运行的程序授予辅助功能、�
 
 一段给朋友复制到 Agent 的话：
 
-> 请安装 https://github.com/RockyYang1225/kurocat-customeowze 的默认分支。先读 README.md、AGENTS.md 和 docs/INSTALL.md，检查本机编译环境，从源码构建并配置新增的 MCP 工具。不要用原版安装包代替；保护已有小猫和设置。遇到需要登录或系统授权的步骤请让我完成。
+> 请安装 https://github.com/zoeyli1997-hash/kurocat-customeowze 的默认分支。先读 README.md、AGENTS.md 和 docs/INSTALL.md，检查本机编译环境，从源码构建并配置新增的 MCP 工具。不要用原版安装包代替；保护已有小猫和设置。遇到需要登录或系统授权的步骤请让我完成。

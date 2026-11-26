@@ -45,7 +45,7 @@
 
 把下面这段和仓库链接一起发给你的 Agent：
 
-> 请安装 https://github.com/RockyYang1225/kurocat-customeowze 的默认分支。先读 README.md、AGENTS.md 和 docs/INSTALL.md。这是源码版，请检查编译环境、从这个仓库构建，并连接新增的自定义素材 MCP 工具。不要下载原版 KuroCat 的安装包来代替。如果已有 KuroCat，请先保护已有设置和小猫。
+> 请安装 https://github.com/zoeyli1997-hash/kurocat-customeowze 的默认分支。先读 README.md、AGENTS.md 和 docs/INSTALL.md。这是源码版，请检查编译环境、从这个仓库构建，并连接新增的自定义素材 MCP 工具。不要下载原版 KuroCat 的安装包来代替。如果已有 KuroCat，请先保护已有设置和小猫。
 
 仅报项目名不保证 Agent 找对仓库，也不代表已经有包管理器的一键安装命令。
 
@@ -54,7 +54,7 @@
 需要 Git、Node.js 22.18+（推荐 24 LTS）、npm、Rust stable/Cargo 和 Xcode Command Line Tools。其他平台还需要 Tauri 的对应系统依赖。
 
 ```sh
-git clone https://github.com/RockyYang1225/kurocat-customeowze.git
+git clone https://github.com/zoeyli1997-hash/kurocat-customeowze.git
 cd kurocat-customeowze
 npm ci
 npm run build
