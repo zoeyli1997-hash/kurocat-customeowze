@@ -18,3 +18,11 @@ android/app/src/main/assets/web/
 *.keystore
 *.apk
 *.aab
+
+# Local development, credentials and agent working notes
+.env
+.env.*
+!.env.example
+.local-profile/
+docs/superpowers/
+src-tauri/gen/schemas/macOS-schema.json

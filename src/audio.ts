@@ -9,7 +9,14 @@ class CatAudio {
     this.enabled = enabled;
     if (!enabled) {
       this.setPurrIntensity(0);
+    } else {
+      // Build the silent graph before the first petting gesture.
+      this.prepare();
     }
+  }
+
+  public prepare(): void {
+    this.ensurePurrGraph();
   }
 
   private ensurePurrGraph(): boolean {
@@ -19,7 +26,7 @@ class CatAudio {
         window.AudioContext ||
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AC) return false;
-      this.ctx = new AC();
+      this.ctx = new AC({ latencyHint: 'interactive' });
     }
     if (this.ctx.state === 'suspended') {
       void this.ctx.resume().catch(() => {});
@@ -116,9 +123,8 @@ class CatAudio {
     const target = this.enabled ? Math.max(0, Math.min(1, intensity)) : 0;
     if (target <= 0.01 && !this.graphReady) return;
     if (Math.abs(target - this.currentIntensity) < 0.005) return;
-    this.currentIntensity = target;
-
     if (target > 0.01 && !this.ensurePurrGraph()) return;
+    this.currentIntensity = target;
     if (!this.ctx || !this.masterGain) return;
 
     if (target > 0.01 && this.ctx.state === 'suspended') {
@@ -127,7 +133,7 @@ class CatAudio {
 
     const now = this.ctx.currentTime;
     const targetGain = target * 0.26;
-    const timeConst = target > 0.01 ? 0.14 : 0.22;
+    const timeConst = target > 0.01 ? 0.018 : 0.22;
     this.masterGain.gain.setTargetAtTime(targetGain, now, timeConst);
   }
 }

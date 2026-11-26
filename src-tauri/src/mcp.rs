@@ -13,7 +13,12 @@ const SERVER_NAME: &str = "kurocat";
 const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn tool_definitions() -> Value {
-    json!([
+    let mut tools = json!([
+        {
+            "name": "get_input_status",
+            "description": "Read macOS input permission status, active input channels and received key event count. Does not change permissions.",
+            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+        },
         {
             "name": "list_cats",
             "description": "List all available KuroCat desktop pet skins (built-in and custom cats) and show which cat is currently active on screen.",
@@ -168,7 +173,9 @@ fn tool_definitions() -> Value {
                 }
             }
         }
-    ])
+    ]);
+    tools.as_array_mut().unwrap().extend(crate::custom_skins::tool_definitions());
+    tools
 }
 
 fn ok_text(payload: Value) -> Value {
@@ -186,8 +193,21 @@ fn err_text(msg: &str) -> Value {
     })
 }
 
+fn force_artwork_2d(settings: &mut crate::config::AppSettings) {
+    if all_cats().iter().any(|cat|cat.id==settings.cat_breed && cat.sketch_skin.is_some()) {settings.render_mode="2d".into();}
+}
+
 fn execute_tool(name: &str, args: &Value, on_change: &dyn Fn()) -> Value {
     match name {
+        "get_custom_skin_guide" | "import_custom_skin" | "update_custom_skin" | "inspect_custom_skin" | "export_custom_skin" => {
+            match crate::custom_skins::call(name,args) {
+                Ok(value) => {
+                    if matches!(name,"import_custom_skin"|"update_custom_skin") {on_change();}
+                    if name=="inspect_custom_skin" {value} else {ok_text(value)}
+                }
+                Err(error) => err_text(&error),
+            }
+        }
         "list_cats" => {
             let settings = load_settings();
             let cats = all_cats();
@@ -207,6 +227,9 @@ fn execute_tool(name: &str, args: &Value, on_change: &dyn Fn()) -> Value {
                 Ok(c) => c,
                 Err(e) => return err_text(&format!("Invalid cat skin JSON: {}", e)),
             };
+            if parsed.sketch_skin.is_some() || parsed.sketch_revision.is_some() || all_cats().iter().any(|cat|cat.id==sanitize_cat_id(&parsed.id) && cat.sketch_skin.is_some()) {
+                return err_text("Artwork cats use import_custom_skin / update_custom_skin; upsert_cat only edits original parameter cats.");
+            }
             match upsert_custom_cat(parsed) {
                 Ok(saved) => {
                     let activate = args
@@ -242,6 +265,7 @@ fn execute_tool(name: &str, args: &Value, on_change: &dyn Fn()) -> Value {
             }
             let mut s = load_settings();
             s.cat_breed = id.clone();
+            force_artwork_2d(&mut s);
             save_settings(&s);
             on_change();
             ok_text(json!({
@@ -254,7 +278,7 @@ fn execute_tool(name: &str, args: &Value, on_change: &dyn Fn()) -> Value {
                 return err_text("Missing required 'id' string argument.");
             };
             let id = sanitize_cat_id(id_raw);
-            match delete_custom_cat(&id) {
+            match if crate::custom_skins::has_saved_skin(&id) {crate::custom_skins::delete_saved_skin(&id)}else{delete_custom_cat(&id)} {
                 Ok(removed) => {
                     if removed {
                         let mut s = load_settings();
@@ -273,6 +297,22 @@ fn execute_tool(name: &str, args: &Value, on_change: &dyn Fn()) -> Value {
                 }
                 Err(e) => err_text(&format!("Failed to delete cat: {}", e)),
             }
+        }
+        "get_input_status" => {
+            #[cfg(target_os = "macos")]
+            {
+                let st = crate::input_hook::macos_hook::get_macos_input_status();
+                ok_text(json!({
+                    "accessibility": st.accessibility,
+                    "inputMonitoring": st.input_monitoring,
+                    "tapActive": st.tap_active,
+                    "tapHasKeyboard": st.tap_has_keyboard,
+                    "hidActive": st.hid_active,
+                    "keyEventsReceived": st.key_events_received
+                }))
+            }
+            #[cfg(not(target_os = "macos"))]
+            { err_text("Input diagnostics are available on macOS only.") }
         }
         "get_settings" => ok_text(serde_json::to_value(load_settings()).unwrap_or(json!({}))),
         "update_settings" => {
@@ -330,6 +370,7 @@ fn execute_tool(name: &str, args: &Value, on_change: &dyn Fn()) -> Value {
                     s.autostart = b;
                 }
             }
+            force_artwork_2d(&mut s);
             save_settings(&s);
             on_change();
             ok_text(serde_json::to_value(&s).unwrap_or(json!({})))
@@ -368,7 +409,7 @@ pub fn handle_jsonrpc(req: &Value, on_change: &dyn Fn()) -> Option<Value> {
                     "name": SERVER_NAME,
                     "version": SERVER_VERSION
                 },
-                "instructions": "Use get_cat_schema to inspect the custom cat design format, then call upsert_cat (with activate: true) to create or customize desktop pet cats in real time on the user's Windows desktop."
+                "instructions": "For original color/pattern parameter cats use get_cat_schema and upsert_cat. For freely drawn cats from photos, FIRST read get_custom_skin_guide, generate a six-part atlas using the AI client's image tools, then import_custom_skin from a local file. Use update_custom_skin for refinements, inspect_custom_skin for source artwork review, switch_cat for live animation, and export_custom_skin to share. KuroCat does not generate images or store API keys."
             }))
         }
         "ping" => Ok(json!({})),
@@ -585,4 +626,44 @@ fn handle_http_conn(mut stream: TcpStream, enabled: &AtomicBool, on_change: &dyn
         "application/json; charset=utf-8",
         r#"{"error":"Not found. Use POST /mcp or GET /health"}"#,
     );
+}
+
+#[cfg(test)]
+mod custom_skin_tests {
+    use super::*;
+    #[test]
+    fn custom_skin_tools_are_discoverable_and_guide_does_not_lock_coat_colors() {
+        let tools=tool_definitions();
+        for name in ["get_custom_skin_guide","import_custom_skin","update_custom_skin","inspect_custom_skin","export_custom_skin"] {
+            assert!(tools.as_array().unwrap().iter().any(|t|t["name"]==name), "missing {name}");
+        }
+        let response=execute_tool("get_custom_skin_guide",&json!({}),&||{});
+        assert_eq!(response["isError"],false);
+        let guide:Value=serde_json::from_str(response["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert!(guide["prompt"].as_str().unwrap().contains("Coat colors, markings, eye colors"));
+        assert_eq!(guide["generationProvidedBy"],"connected AI client");
+    }
+    #[test]
+    fn custom_skin_import_reports_actionable_validation_errors() {
+        let response=execute_tool("import_custom_skin",&json!({"path":"relative.png","name":"猫"}),&||{});
+        assert_eq!(response["isError"],true);
+        let error=response["content"][0]["text"].as_str().unwrap();
+        assert!(!error.contains("Unknown tool"));
+        assert!(error.contains("绝对路径"));
+    }
+}
+
+#[cfg(test)]
+mod http_custom_tests {
+    use super::*;
+    #[test]
+    fn http_transport_exposes_custom_artwork_tools() {
+        let listener=TcpListener::bind("127.0.0.1:0").unwrap();let addr=listener.local_addr().unwrap();
+        let thread=std::thread::spawn(move||{let(stream,_)=listener.accept().unwrap();handle_http_conn(stream,&AtomicBool::new(true),&||{});});
+        let mut socket=TcpStream::connect(addr).unwrap();socket.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+        let body=json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}).to_string();
+        write!(socket,"POST /mcp HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n{}",body.len(),body).unwrap();
+        let mut response=String::new();socket.read_to_string(&mut response).unwrap();thread.join().unwrap();
+        assert!(response.starts_with("HTTP/1.1 200"));assert!(response.contains("import_custom_skin"));assert!(response.contains("upsert_cat"));
+    }
 }

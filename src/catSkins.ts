@@ -16,6 +16,8 @@ export interface CatSkinConfig {
   name: string;
   emoji?: string;
   builtin?: boolean;
+  sketchSkin?: string;
+  sketchRevision?: string;
 
   furColor: string;
   furSecondaryColor?: string;
@@ -64,6 +66,8 @@ export interface CatSkinConfig {
 }
 
 export interface ResolvedSkin {
+  sketchSkin: string | null;
+  sketchRevision: string;
   id: string;
   name: string;
   isDarkBase: boolean;
@@ -133,6 +137,8 @@ export function resolveCustomSkin(raw: CatSkinConfig): ResolvedSkin {
 
   return {
     id: raw.id,
+    sketchSkin: raw.sketchSkin || null,
+    sketchRevision: raw.sketchRevision || "",
     name: raw.name || raw.id,
     isDarkBase: darkBase,
     furColor: fur,

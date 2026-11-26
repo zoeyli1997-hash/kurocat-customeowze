@@ -118,20 +118,13 @@ function switchTab(nextTab: MenuTabId): void {
   }
 }
 
-function renderFooterUpdateState(customLabel?: string, ready = false): void {
+function renderFooterUpdateState(_customLabel?: string, _ready = false): void {
   const hint = document.getElementById('update-hint');
-  const isReady = ready || Boolean(cachedUpdateInfo?.hasUpdate);
   if (btnCheckUpdateEl) {
-    btnCheckUpdateEl.classList.toggle('update-ready', isReady);
+    btnCheckUpdateEl.disabled = true;
+    btnCheckUpdateEl.classList.remove('update-ready');
   }
-  if (!hint) return;
-  if (customLabel) {
-    hint.textContent = customLabel;
-  } else if (cachedUpdateInfo?.hasUpdate) {
-    hint.textContent = `⬆ 更新 v${cachedUpdateInfo.latestVersion}`;
-  } else {
-    hint.textContent = `检查更新 v${currentAppVersion}`;
-  }
+  if (hint) hint.textContent = '官方更新已停用';
 }
 
 function closeMenu(): void {
@@ -224,7 +217,7 @@ function syncUI(): void {
   const activeCat = catList.find((c) => c.id === settings.catBreed) ?? catList[0];
   renderBreedPills();
 
-  const renderMode = settings.renderMode === '2d' ? '2d' : '3d';
+  const renderMode = activeCat?.sketchSkin || settings.renderMode === '2d' ? '2d' : '3d';
   const collarColor =
     settings.collarColor === 'red' ||
     settings.collarColor === 'blue' ||
@@ -234,6 +227,8 @@ function syncUI(): void {
       : 'none';
   document.querySelectorAll<HTMLButtonElement>('[data-rendermode]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.rendermode === renderMode);
+    btn.disabled = Boolean(activeCat?.sketchSkin && btn.dataset.rendermode === '3d');
+    btn.title = btn.disabled ? '手绘皮肤使用 2D 动作模式' : '';
   });
   document.querySelectorAll<HTMLButtonElement>('[data-collar]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.collar === collarColor);

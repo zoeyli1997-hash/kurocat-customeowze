@@ -5,6 +5,7 @@ import {
   type TailKeyMode,
 } from './catEngine';
 import { catAudio } from './audio';
+import { validateSkin } from './customSkin';
 import { DEFAULT_BUILTIN_CATS, type CatSkinConfig } from './catSkins';
 import type { KeyboardLayoutId } from './keyboardLayout';
 import type { CollarColorId, KuroCatEngine3D } from './catEngine3d';
@@ -44,6 +45,11 @@ interface ObsStateSnapshot {
 const canvas = document.getElementById('obs-canvas') as HTMLCanvasElement;
 const canvas3d = document.getElementById('obs-canvas-3d') as HTMLCanvasElement;
 const engine = new KuroCatEngine(canvas);
+engine.sketchLoader = async (id) => {
+  const response = await fetch(`/obs/skins/${encodeURIComponent(id)}`);
+  if (!response.ok) throw new Error('小猫素材不可用');
+  return validateSkin(await response.json());
+};
 
 let engine3d: KuroCatEngine3D | null = null;
 let loading3d: Promise<void> | null = null;
@@ -124,7 +130,7 @@ function syncObs3D(
   tailIds: string[],
   showBubbles: boolean,
 ): void {
-  const want3d = mode === '3d' && activeCat?.id !== 'dafeiyu' && !webglBlocked;
+  const want3d = mode === '3d' && !activeCat?.sketchSkin && activeCat?.id !== 'dafeiyu' && !webglBlocked;
   if (!want3d) {
     if (active3d) {
       engine3d?.stop();

@@ -254,8 +254,8 @@ pub fn setup_tray(app: &AppHandle, initial: &AppSettings) -> tauri::Result<()> {
     let check_update = MenuItem::with_id(
         app,
         "check_update",
-        format!("检查更新 (v{})", crate::updater::CURRENT_VERSION),
-        true,
+        format!("官方更新已停用 (v{})", crate::updater::CURRENT_VERSION),
+        crate::updater::UPSTREAM_UPDATES_ENABLED,
         None::<&str>,
     )?;
     let quit = MenuItem::with_id(app, "quit", "退出 KuroCat", true, None::<&str>)?;

@@ -1,6 +1,7 @@
 #![recursion_limit = "256"]
 
 mod cats;
+mod custom_skins;
 mod config;
 mod game_detect;
 mod input_hook;
@@ -324,6 +325,9 @@ fn update_settings(app: AppHandle, state: State<'_, AppState>, mut patch: AppSet
     } else {
         "black".to_string()
     };
+    if all_cats().iter().any(|cat|cat.id==patch.cat_breed && cat.sketch_skin.is_some()) {
+        patch.render_mode = "2d".to_string();
+    }
     if patch.mcp_port == 0 {
         patch.mcp_port = 27420;
     }
@@ -2456,6 +2460,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
+            custom_skins::load_custom_skin,
             get_cats,
             get_game_active,
             get_mcp_config,

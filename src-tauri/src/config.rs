@@ -219,6 +219,8 @@ impl Default for AppSettings {
 }
 
 pub fn app_data_dir() -> PathBuf {
+    if let Some(path)=std::env::var_os("KUROCAT_DATA_DIR").map(PathBuf::from).filter(|p|p.is_absolute()) {return path;}
+
     #[cfg(windows)]
     {
         let base = std::env::var("APPDATA")

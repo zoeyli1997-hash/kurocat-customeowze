@@ -1,0 +1,60 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {mkdtemp, readFile, writeFile, rm, readdir} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join, resolve} from 'node:path';
+import {createInterface} from 'node:readline';
+
+const binary=process.env.KUROCAT_TEST_BINARY;
+test('compiled MCP creates, refines, inspects, shares and removes artwork cats in an isolated profile', {skip:!binary,timeout:30000}, async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'kurocat-mcp-'));
+  const profile=join(dir,'profile');
+  const child=spawn(resolve(binary),['--mcp'],{env:{...process.env,KUROCAT_DATA_DIR:profile},stdio:['pipe','pipe','pipe']});
+  const pending=new Map();let seq=0,stderr='';
+  child.stderr.on('data',b=>{stderr+=b;});
+  const lines=createInterface({input:child.stdout});
+  lines.on('line',line=>{try{const r=JSON.parse(line);const wait=pending.get(r.id);if(wait){pending.delete(r.id);wait.resolve(r);}}catch{}});
+  child.on('exit',code=>{for(const w of pending.values())w.reject(Error(`MCP exited ${code}: ${stderr}`));pending.clear();});
+  const rpc=(method,params={})=>new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject});child.stdin.write(JSON.stringify({jsonrpc:'2.0',id,method,params})+'\n');});
+  const call=async(name,args={})=>{const r=await rpc('tools/call',{name,arguments:args});assert.ok(!r.error,JSON.stringify(r));return r.result;};
+  const ok=r=>{assert.equal(r.isError,false,r.content?.[0]?.text);return JSON.parse(r.content[0].text);};
+  const fail=r=>{assert.equal(r.isError,true);return r.content[0].text;};
+  try {
+    const init=await rpc('initialize',{protocolVersion:'2025-03-26'});assert.ok(init.result.instructions.includes('get_custom_skin_guide'));
+    const discovery=await rpc('tools/list');assert.ok(discovery.result.tools.some(t=>t.name==='import_custom_skin'));assert.ok(discovery.result.tools.some(t=>t.name==='upsert_cat'));
+    assert.equal(ok(await call('get_custom_skin_guide')).generationProvidedBy,'connected AI client');
+    assert.match(fail(await call('import_custom_skin',{path:'remote.png',name:'猫'})),/绝对路径/);
+    const source=resolve('examples/golden-cat.catpack');
+    const imported=ok(await call('import_custom_skin',{path:source,id:'diy-roundtrip',name:'测试猫',activate:true}));
+    assert.equal(imported.skin.id,'diy-roundtrip');assert.equal(imported.activated,true);
+    assert.match(fail(await call('import_custom_skin',{path:source,id:'diy-roundtrip'})),/已存在/);
+    let settings=ok(await call('get_settings'));assert.equal(settings.catBreed,'diy-roundtrip');assert.equal(settings.renderMode,'2d');
+    let updated=ok(await call('update_custom_skin',{id:'diy-roundtrip',rig:{headScale:1.12},parts:{headOpen:{x:0.01,w:0.49}}}));
+    assert.equal(updated.skin.rig.headScale,1.12);assert.equal(updated.skin.rig.pawScale,1);assert.equal(updated.skin.parts.tail.x,0.5);
+    assert.notEqual(updated.skin.revision,imported.skin.revision);
+    assert.equal(updated.activated,false);
+    const inspection=await call('inspect_custom_skin',{id:'diy-roundtrip'});const meta=ok(inspection);assert.equal(meta.rig.headScale,1.12);assert.equal(inspection.content[1].type,'image');assert.equal(inspection.content[1].mimeType,'image/png');
+    assert.match(fail(await call('update_custom_skin',{id:'diy-roundtrip',rig:{headScale:10}})),/范围/);
+    assert.equal(ok(await call('inspect_custom_skin',{id:'diy-roundtrip',includeImage:false})).rig.headScale,1.12);
+    assert.match(fail(await call('upsert_cat',{cat:{id:'diy-roundtrip',name:'oops',furColor:'#000000'}})),/update_custom_skin/);
+    assert.match(fail(await call('upsert_cat',{cat:{id:'DIY-ROUNDTRIP',name:'oops',furColor:'#000000'}})),/update_custom_skin/);
+    const dest=join(dir,'friend.catpack');ok(await call('export_custom_skin',{id:'diy-roundtrip',path:dest}));
+    assert.match(fail(await call('export_custom_skin',{id:'diy-roundtrip',path:dest})),/不会自动覆盖/);
+    const pack=JSON.parse(await readFile(dest,'utf8'));assert.equal(pack.rig.headScale,1.12);assert.equal(pack.parts.headOpen.x,0.01);assert.ok(!('apiKey' in pack));assert.ok(!('photos' in pack));
+    const importedAgain=ok(await call('import_custom_skin',{path:dest,id:'diy-friend',activate:false}));assert.equal(importedAgain.skin.rig.headScale,1.12);
+    // PNG import and artwork replacement are real file operations, not metadata-only mocks.
+    const png=join(dir,'art.png');await writeFile(png,Buffer.from(pack.atlasDataUrl.split(',')[1],'base64'));
+    const pngCat=ok(await call('import_custom_skin',{path:png,name:'PNG导入测试',activate:false}));assert.ok(pngCat.skin.id.startsWith('diy-'));
+    updated=ok(await call('update_custom_skin',{id:pngCat.skin.id,atlasPath:png,rig:{pawScale:0.9}}));assert.equal(updated.skin.rig.pawScale,0.9);
+    const bad=join(dir,'bad.catpack');await writeFile(bad,JSON.stringify({...pack,parts:{}}));fail(await call('import_custom_skin',{path:bad,id:'diy-bad'}));
+    settings=ok(await call('update_settings',{renderMode:'3d'}));assert.equal(settings.renderMode,'2d');
+    const normal=ok(await call('upsert_cat',{cat:{id:'normal-test',name:'原版改色',furColor:'#123456'}}));assert.equal(normal.cat.furColor,'#123456');
+    ok(await call('switch_cat',{id:'diy-roundtrip'}));assert.equal(ok(await call('get_settings')).renderMode,'2d');
+    assert.ok(ok(await call('list_cats')).cats.find(c=>c.id==='diy-roundtrip').sketchRevision);
+    ok(await call('delete_cat',{id:'diy-roundtrip'}));assert.equal(ok(await call('get_settings')).catBreed,'black');
+    fail(await call('inspect_custom_skin',{id:'diy-roundtrip'}));
+    assert.ok((await readdir(join(profile,'diy-skins','.trash'))).some(x=>x.startsWith('diy-roundtrip-')));
+    assert.ok(!ok(await call('list_cats')).cats.some(c=>c.id==='diy-roundtrip'));
+  } finally {child.stdin.end();child.kill();lines.close();await rm(dir,{recursive:true,force:true});}
+});

@@ -8,10 +8,17 @@ const REPO_API_LATEST: &str = "https://api.github.com/repos/qianyiai/kurocat/rel
 const REPO_RELEASES_PAGE: &str = "https://github.com/qianyiai/kurocat/releases/latest";
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+// A fork must never replace itself with an upstream binary. Enable updates only
+// after a separately configured and reviewed fork release channel exists.
+pub const UPSTREAM_UPDATES_ENABLED: bool = false;
+const UPDATES_DISABLED_MESSAGE: &str = "定制版已停用官方更新，避免覆盖 DIY 功能。";
 
 static LATEST_UPDATE_CACHE: OnceLock<Mutex<Option<UpdateInfo>>> = OnceLock::new();
 
 pub fn get_cached_update_info() -> Option<UpdateInfo> {
+    if !UPSTREAM_UPDATES_ENABLED {
+        return None;
+    }
     LATEST_UPDATE_CACHE
         .get_or_init(|| Mutex::new(None))
         .lock()
@@ -674,6 +681,9 @@ fn fetch_latest_release_json() -> Result<String, String> {
 }
 
 pub fn check_latest_update() -> Result<UpdateInfo, String> {
+    if !UPSTREAM_UPDATES_ENABLED {
+        return Err(UPDATES_DISABLED_MESSAGE.to_string());
+    }
     let raw_json = fetch_latest_release_json()?;
     let rel: GhRelease = serde_json::from_str(&raw_json)
         .map_err(|e| format!("解析最新版本信息失败: {}", e))?;
@@ -1063,6 +1073,9 @@ fn install_macos_update(app: &AppHandle, info: &UpdateInfo) -> Result<(), String
 }
 
 pub fn perform_update_install(app: &AppHandle, info: UpdateInfo) -> Result<(), String> {
+    if !UPSTREAM_UPDATES_ENABLED {
+        return Err(UPDATES_DISABLED_MESSAGE.to_string());
+    }
     if !info.has_update {
         emit_progress(
             app,
@@ -1098,6 +1111,9 @@ pub fn perform_update_install(app: &AppHandle, info: UpdateInfo) -> Result<(), S
 }
 
 pub fn start_background_update_checker(app: AppHandle) {
+    if !UPSTREAM_UPDATES_ENABLED {
+        return;
+    }
     std::thread::spawn(move || {
         // Gentle initial delay after launch so startup stays instant & quiet
         std::thread::sleep(std::time::Duration::from_secs(8));
@@ -1214,10 +1230,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires live internet access to GitHub API"]
-    fn live_check_latest_update_uses_native_http() {
-        let info = check_latest_update().expect("native WinHTTP release check should succeed");
-        assert!(!info.latest_version.is_empty());
-        assert!(info.download_url.is_some());
+    fn custom_build_blocks_upstream_update_checks_and_cached_offers() {
+        let error = check_latest_update().expect_err("fork must not contact upstream releases");
+        assert!(error.contains("已停用官方更新"));
+        assert!(get_cached_update_info().is_none());
     }
 }

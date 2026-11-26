@@ -9,6 +9,7 @@ import {
   type TailKeyMode,
 } from './catEngine';
 import { catAudio } from './audio';
+import type { SketchSkinPackage } from './customSkin';
 import { DEFAULT_BUILTIN_CATS, type CatSkinConfig } from './catSkins';
 import {
   getKeyboardLayout,
@@ -174,6 +175,8 @@ const btnTailCancelEl = document.getElementById('btn-tail-cancel') as HTMLButton
 const tailModeBadgeEl = document.getElementById('tail-mode-badge') as HTMLSpanElement;
 const tailKeysCountEl = document.getElementById('tail-keys-count') as HTMLSpanElement;
 const engine = new KuroCatEngine(canvas);
+engine.sketchLoader = (id) => invoke<SketchSkinPackage>('load_custom_skin', { id });
+engine.onSketchError = (message) => showUpdateToast(message, { autoHideMs: 6000 });
 
 // Lazy-loaded Three.js 3D engine (NEVER imported when user stays in 2D mode -> +0 MB overhead!)
 let engine3d: KuroCatEngine3D | null = null;
@@ -198,6 +201,7 @@ function shouldWearHeadphonesNow(): boolean {
 function wants3DNow(): boolean {
   return (
     settings.renderMode !== '2d' &&
+    !catList.find(cat => cat.id === settings.catBreed)?.sketchSkin &&
     settings.catBreed !== 'dafeiyu' &&
     !tailPickerOpen &&
     !isWin7Ulw &&
@@ -360,7 +364,7 @@ function syncMenuUI(): void {
   const activeCat = catList.find((c) => c.id === settings.catBreed) ?? catList[0];
   renderBreedPills();
 
-  const renderMode: DesktopRenderMode = settings.renderMode === '2d' ? '2d' : '3d';
+  const renderMode: DesktopRenderMode = activeCat?.sketchSkin || settings.renderMode === '2d' ? '2d' : '3d';
   const collarColor: CollarColorId =
     settings.collarColor === 'red' ||
     settings.collarColor === 'blue' ||
@@ -370,6 +374,8 @@ function syncMenuUI(): void {
       : 'none';
   document.querySelectorAll<HTMLButtonElement>('[data-rendermode]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.rendermode === renderMode);
+    btn.disabled = Boolean(activeCat?.sketchSkin && btn.dataset.rendermode === '3d');
+    btn.title = btn.disabled ? '手绘皮肤使用 2D 动作模式' : '';
   });
   document.querySelectorAll<HTMLButtonElement>('[data-collar]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.collar === collarColor);
@@ -637,7 +643,7 @@ async function createDesktopShortcut(): Promise<void> {
 function setUpdateHint(text: string, mode: 'default' | 'ready' | 'error' = 'default'): void {
   const hint = document.getElementById('update-hint');
   if (!hint) return;
-  hint.textContent = text;
+  hint.textContent = '定制版：官方更新已停用';
   hint.classList.remove('update-ready', 'update-error');
   if (mode === 'ready') hint.classList.add('update-ready');
   else if (mode === 'error') hint.classList.add('update-error');
@@ -1101,6 +1107,9 @@ async function bootstrap(): Promise<void> {
         }
       }
       if (settings.clickThroughLocked && !altOverride && !e.altKey) return;
+      if (!active3d && engine.hitTestCatAtClientPoint(e.clientX, e.clientY)) {
+        engine.onPetClick();
+      }
       canvas.classList.add('pet-dragging');
       canvas3d.classList.add('pet-dragging');
       void invoke('set_dragging', { dragging: true });

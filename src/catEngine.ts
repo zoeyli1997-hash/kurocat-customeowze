@@ -10,6 +10,8 @@ import {
 import { catAudio } from './audio';
 import { resolveCustomSkin, type CatSkinConfig, type ResolvedSkin } from './catSkins';
 import { DaFeiYuRenderer, type DaFeiYuLayout } from './dafeiyuRenderer';
+import { SketchCatRig } from './sketchCatRig';
+import type { SketchSkinPackage } from './customSkin';
 
 export const LOGICAL_W = 420;
 export const LOGICAL_H = 440;
@@ -238,6 +240,16 @@ export class KuroCatEngine {
   public onAfterRender: (() => void) | null = null;
   public catBreed: CatBreed = 'black';
   public customSkin: ResolvedSkin | null = null;
+  private sketchRig = new SketchCatRig(() => this.wakeRendering());
+  public sketchLoader: ((id: string) => Promise<SketchSkinPackage>) | null = null;
+  public onSketchError: ((message: string) => void) | null = null;
+  private requestedSketch: string | null = null;
+  public async loadSketchPackage(skin: SketchSkinPackage): Promise<void> {
+    await this.sketchRig.load(skin);
+  }
+  private isSketchCat(): boolean {
+    return Boolean(this.customSkin?.sketchSkin && this.customSkin.sketchSkin === this.sketchRig.skinId && this.sketchRig.ready);
+  }
   public keyboardLayout: KeyboardLayoutId = '65';
   public keyboardOrientation: KeyboardOrientation = 'cat';
   public tailKeyMode: TailKeyMode = 'smart';
@@ -424,6 +436,18 @@ export class KuroCatEngine {
     );
   }
 
+  public hitTestCatAtClientPoint(clientX: number, clientY: number): boolean {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return false;
+    const { offsetX, offsetY, uniformScale } = this.getViewportTransform();
+    if (uniformScale <= 0.001) return false;
+    const x = ((clientX - rect.left) * this.canvas.width / rect.width - offsetX) / uniformScale;
+    const y = ((clientY - rect.top) * this.canvas.height / rect.height - offsetY) / uniformScale;
+    const dx = (x - this.catCenterX) / 94;
+    const dy = (y - (this.catTopY + this.catBaseY) * 0.5) / 122;
+    return dx * dx + dy * dy <= 1;
+  }
+
   public hitTestKeyAtClientPoint(clientX: number, clientY: number): KeySpec | null {
     const rect = this.canvas.getBoundingClientRect();
     if (rect.width < 2 || rect.height < 2) return null;
@@ -593,6 +617,14 @@ export class KuroCatEngine {
       this.catBreed = 'black';
       this.customSkin = null;
     }
+    const sketchId = this.customSkin?.sketchSkin || null;
+    const sketchRequest = sketchId ? `${sketchId}:${this.customSkin?.sketchRevision || ''}` : null;
+    if (sketchId && this.sketchLoader && this.requestedSketch !== sketchRequest) {
+      this.requestedSketch = sketchRequest;
+      void this.sketchLoader(sketchId).then(skin => {
+        if (this.customSkin?.sketchSkin === sketchId && this.requestedSketch === sketchRequest) return this.loadSketchPackage(skin);
+      }).catch(() => { if(this.requestedSketch !== sketchRequest)return;this.requestedSketch = null; this.onSketchError?.('小猫素材加载失败，请通过 MCP 重新导入皮肤包。'); });
+    } else if (!sketchId) { this.requestedSketch = null; }
     this.syncLayoutPositions();
     this.wakeRendering();
   }
@@ -875,6 +907,13 @@ export class KuroCatEngine {
     this.directRafPrevMs = 0;
     this.isIdlePacing = false;
     this.rafId = requestAnimationFrame(this.renderFrame);
+  }
+
+  public previewBlink(): void {
+    this.wakeCat(performance.now());
+    this.isBlinking = true;
+    this.blinkProgress = 0;
+    this.wakeRendering();
   }
 
   public stop(): void {
@@ -1462,6 +1501,16 @@ export class KuroCatEngine {
     this.petStrokeTravel = 0;
     this.petReverseTravel = 0;
     this.petStrokeCount = 0;
+  }
+
+  /** A deliberate click on the pet responds before dragging or animation work. */
+  public onPetClick(): void {
+    if (this.catBreed === 'dafeiyu' || this.privacyMode) return;
+    this.wakeCat(performance.now());
+    this.petEnergy = Math.max(this.petEnergy, 0.75);
+    this.squintAmount = Math.max(this.squintAmount, 0.45);
+    catAudio.prepare();
+    catAudio.setPurrIntensity(0.75);
   }
 
   public onWindowCursor(relX: number, relY: number, overCat: boolean): void {
@@ -2403,6 +2452,13 @@ export class KuroCatEngine {
   }
 
   private drawTail(ctx: CanvasRenderingContext2D): void {
+    if (this.isSketchCat()) {
+      const hip = this.spinePoint(0.84, 0);
+      this.sketchRig.tail(ctx, { x: hip.x + 46, y: this.catBaseY - 27 },
+        { x: this.catTail.tipX, y: this.catTail.tipY - this.catTail.hover },
+        this.catTail.reach, this.elapsed);
+      return;
+    }
     // Exact ORIG 0.3s resting tail S-hook, smoothly morphing into:
     //  1) playful arched swan-neck pat onto near-tail keys (catTail.reach),
     //  2) grumpy 3-beat rhythmic desk-thump (crossAmount),
@@ -2696,6 +2752,19 @@ export class KuroCatEngine {
   }
 
   private drawCatBody(ctx: CanvasRenderingContext2D, breath: number, purrShift: number): void {
+    if (this.isSketchCat()) {
+      const torso = this.spinePoint(0.70, breath);
+      const base = this.spinePoint(1, breath);
+      this.sketchRig.body(ctx, torso, base, breath);
+      const head = this.spinePoint(0.24, breath);
+      const blink = this.isBlinking ? 1 - Math.abs(this.blinkProgress - 1) : 0;
+      const slowBlink = this.idleAct?.kind === 'slowBlink'
+        ? Math.sin(Math.max(0, Math.min(1, (performance.now() - this.idleAct.t0) / this.idleAct.dur)) * Math.PI)
+        : 0;
+      this.sketchRig.head(ctx, { x: head.x + purrShift, y: head.y }, this.headTilt,
+        Math.max(blink, slowBlink, this.privacyClose, this.sleepAmount, this.squintAmount));
+      return;
+    }
     if (this.customSkin) {
       this.drawCustomCatBody(ctx, this.customSkin, breath, purrShift);
       return;
@@ -4133,6 +4202,23 @@ export class KuroCatEngine {
   }
 
   private drawPaw(ctx: CanvasRenderingContext2D, paw: PawState, breath: number): void {
+    if (this.isSketchCat()) {
+      const shoulder = this.spinePoint(0.64, breath);
+      const base = this.spinePoint(1, breath);
+      const sign = paw.side === 'left' ? -1 : 1;
+      const idle = { x: base.x + sign * 18, y: base.y - 4 };
+      const curled = this.getLiveCurledPawPos(paw, breath);
+      const active = Math.max(0, 1 - paw.idleWeight - paw.curlWeight);
+      const clickDrop = paw.mode === 'mouse'
+        ? Math.max(this.mouseLeftPress, this.mouseRightPress, this.mouseMiddlePress) * 1.8 : 0;
+      const end = {
+        x: idle.x * paw.idleWeight + curled.x * paw.curlWeight + paw.pos.x * active,
+        y: idle.y * paw.idleWeight + curled.y * paw.curlWeight + (paw.pos.y + clickDrop) * active,
+      };
+      this.sketchRig.arm(ctx, paw.side, { x: shoulder.x + sign * 25, y: shoulder.y - 7 },
+        end, paw.impactSquash);
+      return;
+    }
     // 1) Seated idle vertical front legs (EXACT 4 clean lines of ORIG 0.3s!) OR planted diagonal supporting leg (ORIG 2.2s!)
     if (paw.idleWeight > 0.05) {
       ctx.save();

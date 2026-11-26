@@ -1,0 +1,23 @@
+<!doctype html><html><head><title>Renderer regression fixture</title></head><body><canvas id="cat" width="420" height="440" style="width:420px;height:440px"></canvas><script type="module">
+import {KuroCatEngine} from '../src/catEngine.ts';
+import {catAudio} from '../src/audio.ts';
+window.runRigTest=async()=>{
+ const skin=await (await fetch('../examples/golden-cat.catpack')).json();
+ const engine=new KuroCatEngine(document.querySelector('#cat'),{embedded:true});
+ catAudio.setEnabled(false);let calls=0;let current=skin;
+ engine.sketchLoader=async()=>{calls++;return structuredClone(current);};
+ const cat={id:skin.id,name:skin.name,furColor:'#808080',sketchSkin:skin.id,sketchRevision:'first'};
+ const pause=()=>new Promise(r=>setTimeout(r,140));
+ engine.setCatAppearance(skin.id,cat);engine.start();await pause();
+ if(calls!==1)throw Error(`initial load count ${calls}`);
+ engine.setCatAppearance(skin.id,cat);await pause();if(calls!==1)throw Error('unchanged cat reloaded');
+ current=structuredClone(skin);current.rig.headScale=1.25;
+ engine.setCatAppearance(skin.id,{...cat,sketchRevision:'second'});await pause();
+ if(calls!==2)throw Error('same-ID artwork did not reload');
+ if(engine.sketchRig.rig.headScale!==1.25)throw Error('revised calibration not installed');
+ engine.onKeyDown(65,false);await pause();engine.onKeyUp(65);engine.onMouseDown('left');await pause();engine.onMouseUp('left');engine.previewBlink();await pause();
+ const canvas=document.querySelector('#cat');const data=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+ if(!data.some((v,i)=>i%4===3&&v))throw Error('empty renderer');
+ engine.stop();return {sameIdRevisionReloads:true,unchangedRevisionDoesNotReload:true,rendererHasVisiblePixels:true};
+};
+</script></body></html>

@@ -290,6 +290,14 @@ fn handle_connection(mut stream: TcpStream, app: &AppHandle, running: &Arc<Atomi
 
     let clean_route = raw_path.split('?').next().unwrap_or("/");
 
+    if let Some(id) = clean_route.strip_prefix("/obs/skins/") {
+        match crate::custom_skins::load_saved_skin(id).and_then(|skin| serde_json::to_vec(&skin).map_err(|_|"Invalid skin".into())) {
+            Ok(body) => write_response(&mut stream, "200 OK", "application/json; charset=utf-8", "no-store", if method == "HEAD" { b"" } else { &body }),
+            Err(_) => write_response(&mut stream, "404 Not Found", "text/plain; charset=utf-8", "no-store", b"Skin not found"),
+        }
+        return;
+    }
+
     if clean_route == "/obs/events" {
         handle_sse(stream, app, running);
         return;
